@@ -1,0 +1,1418 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>賽博龐克：極限閃避 // CYBER DODGE</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@500;700;900&family=Noto+Sans+TC:wght@500;700;900&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --neon-cyan: #00f3ff;
+            --neon-magenta: #ff007f;
+            --neon-yellow: #fcee0a;
+            --dark-bg: #06060c;
+        }
+
+        * {
+            box-sizing: border-box;
+            user-select: none;
+            -webkit-user-select: none;
+            touch-action: none;
+        }
+
+        body, html {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            background-color: var(--dark-bg);
+            overflow: hidden;
+            font-family: 'Orbitron', 'Noto Sans TC', sans-serif;
+            color: #fff;
+        }
+
+        /* CRT Scanline & Vignette Overlay */
+        .crt-overlay {
+            position: fixed;
+            inset: 0;
+            pointer-events: none;
+            z-index: 25;
+            background: 
+                linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.25) 50%), 
+                radial-gradient(circle at center, transparent 60%, rgba(0, 0, 0, 0.75) 100%);
+            background-size: 100% 4px, 100% 100%;
+        }
+
+        /* Glitch Alert Animation */
+        @keyframes glitch-pulse {
+            0%, 100% { transform: translate(0, 0) scale(1); text-shadow: -3px 0 var(--neon-cyan), 3px 0 var(--neon-magenta); }
+            25% { transform: translate(-4px, 2px) scale(1.03); text-shadow: 3px 0 var(--neon-cyan), -3px 0 var(--neon-yellow); }
+            50% { transform: translate(4px, -2px) scale(0.98); text-shadow: -3px 0 var(--neon-magenta), 3px 0 var(--neon-cyan); }
+            75% { transform: translate(-2px, -2px) scale(1.02); text-shadow: 2px 0 var(--neon-yellow), -2px 0 var(--neon-magenta); }
+        }
+
+        .glitch-banner {
+            animation: glitch-pulse 0.18s infinite;
+        }
+
+        /* Neon Text & Box Shadows */
+        .neon-text-cyan {
+            text-shadow: 0 0 8px rgba(0, 243, 255, 0.8), 0 0 20px rgba(0, 243, 255, 0.4);
+        }
+        .neon-text-magenta {
+            text-shadow: 0 0 8px rgba(255, 0, 127, 0.8), 0 0 20px rgba(255, 0, 127, 0.4);
+        }
+        .neon-text-yellow {
+            text-shadow: 0 0 10px rgba(252, 238, 10, 0.9), 0 0 25px rgba(252, 238, 10, 0.5);
+        }
+
+        .cyber-panel {
+            background: rgba(10, 12, 24, 0.82);
+            border: 1px solid rgba(0, 243, 255, 0.45);
+            box-shadow: 0 0 20px rgba(0, 243, 255, 0.15), inset 0 0 15px rgba(0, 243, 255, 0.08);
+            backdrop-filter: blur(8px);
+        }
+
+        .cyber-btn {
+            position: relative;
+            background: linear-gradient(135deg, #00f3ff 0%, #0088ff 100%);
+            color: #05050a;
+            font-weight: 900;
+            letter-spacing: 0.08em;
+            clip-path: polygon(12px 0, 100% 0, 100% calc(100% - 12px), calc(100% - 12px) 100%, 0 100%, 0 12px);
+            transition: all 0.15s ease;
+            box-shadow: 0 0 25px rgba(0, 243, 255, 0.6);
+        }
+        .cyber-btn:hover {
+            transform: translateY(-2px) scale(1.03);
+            box-shadow: 0 0 35px rgba(0, 243, 255, 0.9);
+            background: linear-gradient(135deg, #55ffff 0%, #00bbff 100%);
+        }
+        .cyber-btn:active {
+            transform: translateY(1px) scale(0.98);
+        }
+
+        .fever-segment {
+            clip-path: polygon(6px 0, 100% 0, calc(100% - 6px) 100%, 0 100%);
+            transition: all 0.25s cubic-bezier(0.22, 1, 0.36, 1);
+        }
+
+        #gameCanvas {
+            display: block;
+            width: 100%;
+            height: 100%;
+        }
+    </style>
+</head>
+<body class="relative w-full h-full select-none overflow-hidden">
+
+    <!-- Main Game Canvas -->
+    <canvas id="gameCanvas"></canvas>
+
+    <!-- CRT Scanline Overlay -->
+    <div class="crt-overlay"></div>
+
+    <!-- Top HUD -->
+    <div id="hud" class="fixed top-0 left-0 right-0 z-30 p-3 sm:p-5 flex flex-col gap-2 pointer-events-none">
+        <div class="max-w-4xl w-full mx-auto flex items-center justify-between gap-2">
+            
+            <!-- Left: Current Score & Combo -->
+            <div class="cyber-panel px-3.5 py-2 rounded-lg flex items-center gap-4">
+                <div>
+                    <div class="text-[10px] sm:text-xs text-cyan-300/80 tracking-widest uppercase">SCORE // 分數</div>
+                    <div id="scoreDisplay" class="text-xl sm:text-3xl font-black text-white neon-text-cyan tabular-nums">0</div>
+                </div>
+                <div class="h-8 w-[1px] bg-cyan-500/30"></div>
+                <div>
+                    <div class="text-[10px] sm:text-xs text-fuchsia-300/80 tracking-widest uppercase">SPEED // 倍率</div>
+                    <div id="speedDisplay" class="text-sm sm:text-xl font-bold text-fuchsia-400 tabular-nums">1.0x</div>
+                </div>
+            </div>
+
+            <!-- Center: Fever Core Gauge (5 Segments) -->
+            <div class="cyber-panel px-3 sm:px-4 py-2 rounded-lg flex flex-col items-center flex-1 max-w-xs">
+                <div class="w-full flex justify-between items-center mb-1">
+                    <span id="feverLabel" class="text-[10px] sm:text-xs font-bold tracking-wider text-yellow-300 uppercase">
+                        FEVER CORE // 狂熱能量
+                    </span>
+                    <span id="feverCountText" class="text-[10px] sm:text-xs font-extrabold text-cyan-300">0 / 5</span>
+                </div>
+                <!-- 5 Segments Bar -->
+                <div id="feverSegmentsContainer" class="w-full flex gap-1.5 h-3 sm:h-3.5">
+                    <div class="fever-segment flex-1 bg-slate-800 border border-cyan-500/30"></div>
+                    <div class="fever-segment flex-1 bg-slate-800 border border-cyan-500/30"></div>
+                    <div class="fever-segment flex-1 bg-slate-800 border border-cyan-500/30"></div>
+                    <div class="fever-segment flex-1 bg-slate-800 border border-cyan-500/30"></div>
+                    <div class="fever-segment flex-1 bg-slate-800 border border-cyan-500/30"></div>
+                </div>
+                <!-- Active Fever Timer Progress Bar (Hidden until Fever triggers) -->
+                <div id="feverTimerBarWrap" class="hidden w-full h-3 sm:h-3.5 bg-slate-900 rounded overflow-hidden border border-yellow-400">
+                    <div id="feverTimerBar" class="h-full bg-gradient-to-r from-yellow-300 via-pink-500 to-cyan-400 w-full"></div>
+                </div>
+            </div>
+
+            <!-- Right: High Score & Audio Toggle -->
+            <div class="flex items-center gap-2">
+                <div class="cyber-panel px-3.5 py-2 rounded-lg text-right hidden sm:block">
+                    <div class="text-[10px] sm:text-xs text-yellow-300/80 tracking-widest uppercase">BEST // 最高紀錄</div>
+                    <div id="bestScoreDisplay" class="text-xl sm:text-2xl font-black text-yellow-300 tabular-nums">0</div>
+                </div>
+
+                <button id="muteBtn" class="pointer-events-auto cyber-panel p-2.5 sm:p-3 rounded-lg text-cyan-300 hover:text-white hover:border-cyan-300 active:scale-95 transition" title="切換音效">
+                    <!-- Unmuted Icon -->
+                    <svg id="iconSoundOn" xmlns="http://www.w3.org/2000/svg" class="w-5 h-5 sm:w-6 sm:h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" />
+                    </svg>
+                    <!-- Muted Icon -->
+                    <svg id="iconSoundOff" xmlns="http://www.w3.org/2000/svg" class="w-5 h-5 sm:w-6 sm:h-6 hidden text-rose-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" />
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M17 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2" />
+                    </svg>
+                </button>
+            </div>
+        </div>
+
+        <!-- Dynamic Status Alerts (Fever Overdrive / System Glitch) -->
+        <div class="w-full flex flex-col items-center justify-center mt-1 space-y-1">
+            <div id="glitchAlert" class="hidden px-4 py-1 rounded bg-fuchsia-950/90 border border-fuchsia-400 text-fuchsia-200 text-xs sm:text-sm font-black tracking-widest uppercase glitch-banner">
+                ⚠ SYSTEM GLITCH // 視覺訊號干擾中 ⚠
+            </div>
+            <div id="feverAlert" class="hidden px-5 py-1 rounded bg-yellow-500/20 border border-yellow-300 text-yellow-200 text-xs sm:text-base font-black tracking-widest uppercase neon-text-yellow animate-bounce">
+                ⚡ FEVER OVERDRIVE // 無敵衝刺！撞碎一切障礙 (+50) ⚡
+            </div>
+        </div>
+    </div>
+
+    <!-- Start Screen Modal -->
+    <div id="startModal" class="fixed inset-0 z-40 flex items-center justify-center p-4 bg-black/75 backdrop-blur-md">
+        <div class="cyber-panel max-w-md w-full p-6 sm:p-8 rounded-2xl text-center border-2 border-cyan-400/60 relative overflow-hidden">
+            <div class="text-xs font-bold tracking-[0.3em] text-fuchsia-400 uppercase mb-1">NEON ARCADE SYSTEM v2.6</div>
+            <h1 class="text-3xl sm:text-4xl font-black tracking-wider text-white neon-text-cyan mb-2">
+                賽博龐克：極限閃避
+            </h1>
+            <p class="text-xs sm:text-sm text-cyan-200/80 mb-6">
+                在無盡的霓虹數據流中穿梭，挑戰你的神經反射極限
+            </p>
+
+            <!-- Rules & Mechanics Cards -->
+            <div class="space-y-3 text-left mb-7 text-xs sm:text-sm">
+                <div class="flex items-start gap-3 p-3 rounded-lg bg-slate-900/90 border border-cyan-500/30">
+                    <span class="text-xl">🛸</span>
+                    <div>
+                        <div class="font-bold text-cyan-300">自由滑動與極限擦邊 (NEAR MISS)</div>
+                        <div class="text-slate-300 text-xs mt-0.5">使用 <span class="text-white font-semibold">滑鼠 / 手指拖曳</span> 或 <span class="text-white font-semibold">方向鍵 / WASD</span> 控制戰機。貼近紅色障礙物邊緣閃過可獲 <span class="text-yellow-300 font-bold">擦邊加分</span>！</div>
+                    </div>
+                </div>
+
+                <div class="flex items-start gap-3 p-3 rounded-lg bg-slate-900/90 border border-yellow-400/30">
+                    <span class="text-xl">⚡</span>
+                    <div>
+                        <div class="font-bold text-yellow-300">連擊狂熱衝刺 (FEVER OVERDRIVE)</div>
+                        <div class="text-slate-300 text-xs mt-0.5">收集 <span class="text-yellow-300 font-bold">5 顆能量核心</span> 啟動 5 秒無敵黃金衝刺！速度翻倍，直接<span class="text-pink-400 font-bold">撞碎所有障礙物</span>狂賺 +50 分！</div>
+                    </div>
+                </div>
+
+                <div class="flex items-start gap-3 p-3 rounded-lg bg-slate-900/90 border border-fuchsia-500/30">
+                    <span class="text-xl">👁️</span>
+                    <div>
+                        <div class="font-bold text-fuchsia-400">系統駭入干擾 (SYSTEM GLITCH)</div>
+                        <div class="text-slate-300 text-xs mt-0.5">小心定時觸發的 <span class="text-fuchsia-300 font-semibold">RGB 色差偏移、畫面傾斜與色彩反轉</span>，撐過干擾獲得生存獎勵！</div>
+                    </div>
+                </div>
+            </div>
+
+            <button id="startBtn" class="cyber-btn w-full py-4 text-base sm:text-lg uppercase cursor-pointer">
+                START OVERDRIVE // 啟動引擎
+            </button>
+        </div>
+    </div>
+
+    <!-- Game Over Modal (Instant One-Click Retry) -->
+    <div id="gameOverModal" class="hidden fixed inset-0 z-40 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md">
+        <div class="cyber-panel max-w-md w-full p-6 sm:p-8 rounded-2xl text-center border-2 border-rose-500/70 shadow-[0_0_35px_rgba(255,0,127,0.3)]">
+            <div class="text-xs font-bold tracking-[0.25em] text-rose-400 uppercase mb-1">CONNECTION TERMINATED</div>
+            <h2 class="text-3xl sm:text-4xl font-black text-white neon-text-magenta mb-5">
+                SIGNAL LOST // 訊號中斷
+            </h2>
+
+            <!-- Score Summary Grid -->
+            <div class="grid grid-cols-2 gap-3 mb-5">
+                <div class="p-3.5 rounded-xl bg-slate-900/90 border border-cyan-500/30">
+                    <div class="text-[11px] text-cyan-300/80 uppercase">本次得分 SCORE</div>
+                    <div id="finalScore" class="text-2xl sm:text-3xl font-black text-white neon-text-cyan mt-1">0</div>
+                </div>
+                <div class="p-3.5 rounded-xl bg-slate-900/90 border border-yellow-400/30 relative">
+                    <div id="newRecordBadge" class="hidden absolute -top-2.5 right-2 px-2 py-0.5 bg-yellow-400 text-black font-black text-[10px] rounded uppercase">NEW BEST!</div>
+                    <div class="text-[11px] text-yellow-300/80 uppercase">最高紀錄 BEST</div>
+                    <div id="finalBestScore" class="text-2xl sm:text-3xl font-black text-yellow-300 mt-1">0</div>
+                </div>
+            </div>
+
+            <!-- Run Stats -->
+            <div class="flex justify-around text-xs text-slate-300 bg-slate-900/60 py-2.5 px-4 rounded-lg mb-6 border border-slate-800">
+                <div>極限擦邊: <span id="statNearMiss" class="text-cyan-300 font-bold">0</span> 次</div>
+                <div>撞碎障礙: <span id="statSmashed" class="text-yellow-300 font-bold">0</span> 個</div>
+            </div>
+
+            <button id="retryBtn" class="cyber-btn w-full py-4 text-base sm:text-lg uppercase cursor-pointer">
+                點擊立即重來 // INSTANT RETRY
+            </button>
+            <div class="text-[11px] text-slate-400 mt-3">按 [空白鍵] 或 [Enter] 亦可瞬間重開</div>
+        </div>
+    </div>
+
+    <script>
+        /* ============================================================================
+         * 1. SYNTHWAVE WEB AUDIO ENGINE (No External Assets Needed)
+         * ============================================================================ */
+        class CyberAudioEngine {
+            constructor() {
+                this.ctx = null;
+                this.isMuted = false;
+                this.beatTimer = null;
+                this.beatStep = 0;
+                this.isPlayingMusic = false;
+                // D Minor Pentatonic Bassline notes (Hz)
+                this.bassNotes = [73.42, 73.42, 87.31, 73.42, 110.00, 103.83, 87.31, 65.41];
+            }
+
+            init() {
+                if (!this.ctx) {
+                    const AudioContext = window.AudioContext || window.webkitAudioContext;
+                    this.ctx = new AudioContext();
+                }
+                if (this.ctx.state === 'suspended') {
+                    this.ctx.resume();
+                }
+            }
+
+            toggleMute() {
+                this.isMuted = !this.isMuted;
+                return this.isMuted;
+            }
+
+            startMusic(getFeverStateCallback) {
+                this.init();
+                this.stopMusic();
+                this.isPlayingMusic = true;
+                this.beatStep = 0;
+
+                const tick = () => {
+                    if (!this.isPlayingMusic) return;
+                    const isFever = getFeverStateCallback ? getFeverStateCallback() : false;
+                    if (!this.isMuted && this.ctx) {
+                        this.playBeatStep(this.beatStep, isFever);
+                    }
+                    this.beatStep = (this.beatStep + 1) % 8;
+                    const interval = isFever ? 120 : 175; // Faster tempo during Fever!
+                    this.beatTimer = setTimeout(tick, interval);
+                };
+                tick();
+            }
+
+            stopMusic() {
+                this.isPlayingMusic = false;
+                if (this.beatTimer) {
+                    clearTimeout(this.beatTimer);
+                    this.beatTimer = null;
+                }
+            }
+
+            playBeatStep(step, isFever) {
+                const now = this.ctx.currentTime;
+
+                // Synth Bass Pluck on every step
+                const osc = this.ctx.createOscillator();
+                const gain = this.ctx.createGain();
+                const filter = this.ctx.createBiquadFilter();
+
+                osc.type = 'sawtooth';
+                const baseFreq = this.bassNotes[step % this.bassNotes.length];
+                osc.frequency.setValueAtTime(isFever ? baseFreq * 1.5 : baseFreq, now);
+
+                filter.type = 'lowpass';
+                filter.frequency.setValueAtTime(isFever ? 950 : 480, now);
+                filter.frequency.exponentialRampToValueAtTime(110, now + 0.14);
+
+                gain.gain.setValueAtTime(0.11, now);
+                gain.gain.exponentialRampToValueAtTime(0.001, now + 0.15);
+
+                osc.connect(filter);
+                filter.connect(gain);
+                gain.connect(this.ctx.destination);
+
+                osc.start(now);
+                osc.stop(now + 0.16);
+
+                // Kick drum on steps 0 and 4
+                if (step % 4 === 0) {
+                    const kickOsc = this.ctx.createOscillator();
+                    const kickGain = this.ctx.createGain();
+                    kickOsc.type = 'sine';
+                    kickOsc.frequency.setValueAtTime(130, now);
+                    kickOsc.frequency.exponentialRampToValueAtTime(32, now + 0.12);
+
+                    kickGain.gain.setValueAtTime(0.28, now);
+                    kickGain.gain.exponentialRampToValueAtTime(0.001, now + 0.14);
+
+                    kickOsc.connect(kickGain);
+                    kickGain.connect(this.ctx.destination);
+                    kickOsc.start(now);
+                    kickOsc.stop(now + 0.15);
+                }
+            }
+
+            playOrbPickup(comboCount) {
+                if (this.isMuted || !this.ctx) return;
+                const now = this.ctx.currentTime;
+                const osc = this.ctx.createOscillator();
+                const gain = this.ctx.createGain();
+
+                // Pitch rises with each orb collected (1 to 5)
+                const baseFreq = 520 + comboCount * 110;
+                osc.type = 'triangle';
+                osc.frequency.setValueAtTime(baseFreq, now);
+                osc.frequency.exponentialRampToValueAtTime(baseFreq * 1.5, now + 0.14);
+
+                gain.gain.setValueAtTime(0.22, now);
+                gain.gain.exponentialRampToValueAtTime(0.001, now + 0.16);
+
+                osc.connect(gain);
+                gain.connect(this.ctx.destination);
+                osc.start(now);
+                osc.stop(now + 0.17);
+            }
+
+            playNearMiss() {
+                if (this.isMuted || !this.ctx) return;
+                const now = this.ctx.currentTime;
+                const osc = this.ctx.createOscillator();
+                const gain = this.ctx.createGain();
+
+                osc.type = 'sine';
+                osc.frequency.setValueAtTime(880, now);
+                osc.frequency.exponentialRampToValueAtTime(1320, now + 0.09);
+
+                gain.gain.setValueAtTime(0.16, now);
+                gain.gain.exponentialRampToValueAtTime(0.001, now + 0.1);
+
+                osc.connect(gain);
+                gain.connect(this.ctx.destination);
+                osc.start(now);
+                osc.stop(now + 0.11);
+            }
+
+            playFeverStart() {
+                if (this.isMuted || !this.ctx) return;
+                const now = this.ctx.currentTime;
+                const notes = [440, 554.37, 659.25, 880, 1108.73];
+                notes.forEach((freq, idx) => {
+                    const osc = this.ctx.createOscillator();
+                    const gain = this.ctx.createGain();
+                    osc.type = 'sawtooth';
+                    osc.frequency.setValueAtTime(freq, now + idx * 0.045);
+
+                    gain.gain.setValueAtTime(0.18, now + idx * 0.045);
+                    gain.gain.exponentialRampToValueAtTime(0.001, now + idx * 0.045 + 0.35);
+
+                    osc.connect(gain);
+                    gain.connect(this.ctx.destination);
+                    osc.start(now + idx * 0.045);
+                    osc.stop(now + idx * 0.045 + 0.36);
+                });
+            }
+
+            playSmashObstacle() {
+                if (this.isMuted || !this.ctx) return;
+                const now = this.ctx.currentTime;
+
+                // White noise burst + sub drop for crunchy impact
+                const bufferSize = this.ctx.sampleRate * 0.18;
+                const buffer = this.ctx.createBuffer(1, bufferSize, this.ctx.sampleRate);
+                const data = buffer.getChannelData(0);
+                for (let i = 0; i < bufferSize; i++) {
+                    data[i] = Math.random() * 2 - 1;
+                }
+
+                const noise = this.ctx.createBufferSource();
+                noise.buffer = buffer;
+
+                const filter = this.ctx.createBiquadFilter();
+                filter.type = 'bandpass';
+                filter.frequency.setValueAtTime(800, now);
+
+                const gain = this.ctx.createGain();
+                gain.gain.setValueAtTime(0.32, now);
+                gain.gain.exponentialRampToValueAtTime(0.001, now + 0.18);
+
+                noise.connect(filter);
+                filter.connect(gain);
+                gain.connect(this.ctx.destination);
+                noise.start(now);
+            }
+
+            playGlitchAlert() {
+                if (this.isMuted || !this.ctx) return;
+                const now = this.ctx.currentTime;
+                const osc = this.ctx.createOscillator();
+                const gain = this.ctx.createGain();
+
+                osc.type = 'square';
+                osc.frequency.setValueAtTime(220, now);
+                osc.frequency.setValueAtTime(640, now + 0.05);
+                osc.frequency.setValueAtTime(150, now + 0.10);
+                osc.frequency.setValueAtTime(520, now + 0.15);
+
+                gain.gain.setValueAtTime(0.16, now);
+                gain.gain.exponentialRampToValueAtTime(0.001, now + 0.25);
+
+                osc.connect(gain);
+                gain.connect(this.ctx.destination);
+                osc.start(now);
+                osc.stop(now + 0.26);
+            }
+
+            playGameOver() {
+                if (this.isMuted || !this.ctx) return;
+                const now = this.ctx.currentTime;
+                const osc = this.ctx.createOscillator();
+                const gain = this.ctx.createGain();
+
+                osc.type = 'sawtooth';
+                osc.frequency.setValueAtTime(300, now);
+                osc.frequency.linearRampToValueAtTime(55, now + 0.55);
+
+                gain.gain.setValueAtTime(0.3, now);
+                gain.gain.exponentialRampToValueAtTime(0.001, now + 0.58);
+
+                osc.connect(gain);
+                gain.connect(this.ctx.destination);
+                osc.start(now);
+                osc.stop(now + 0.6);
+            }
+        }
+
+        /* ============================================================================
+         * 2. GAME SETUP & STATE VARIABLES
+         * ============================================================================ */
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const audio = new CyberAudioEngine();
+
+        // UI Elements
+        const scoreDisplay = document.getElementById('scoreDisplay');
+        const speedDisplay = document.getElementById('speedDisplay');
+        const bestScoreDisplay = document.getElementById('bestScoreDisplay');
+        const feverCountText = document.getElementById('feverCountText');
+        const feverSegmentsContainer = document.getElementById('feverSegmentsContainer');
+        const feverTimerBarWrap = document.getElementById('feverTimerBarWrap');
+        const feverTimerBar = document.getElementById('feverTimerBar');
+        const feverLabel = document.getElementById('feverLabel');
+        const glitchAlert = document.getElementById('glitchAlert');
+        const feverAlert = document.getElementById('feverAlert');
+
+        const startModal = document.getElementById('startModal');
+        const gameOverModal = document.getElementById('gameOverModal');
+        const startBtn = document.getElementById('startBtn');
+        const retryBtn = document.getElementById('retryBtn');
+        const muteBtn = document.getElementById('muteBtn');
+        const iconSoundOn = document.getElementById('iconSoundOn');
+        const iconSoundOff = document.getElementById('iconSoundOff');
+
+        const finalScoreEl = document.getElementById('finalScore');
+        const finalBestScoreEl = document.getElementById('finalBestScore');
+        const newRecordBadge = document.getElementById('newRecordBadge');
+        const statNearMissEl = document.getElementById('statNearMiss');
+        const statSmashedEl = document.getElementById('statSmashed');
+
+        const STORAGE_KEY = 'cyber_dodge_high_score_v1';
+        let highScore = parseInt(localStorage.getItem(STORAGE_KEY) || '0', 10);
+        bestScoreDisplay.textContent = highScore.toLocaleString();
+
+        // Game State
+        let gameState = 'START'; // 'START', 'PLAYING', 'GAMEOVER'
+        let lastTime = 0;
+        let score = 0;
+        let elapsedTime = 0;
+        let speedMultiplier = 1.0;
+        let gridScrollOffset = 0;
+        let beatPulse = 0;
+
+        // Fever Mode State
+        let feverOrbs = 0;
+        const FEVER_MAX_ORBS = 5;
+        let isFever = false;
+        let feverTimeLeft = 0;
+        const FEVER_DURATION = 5.0; // seconds
+
+        // Visual Interference (Glitch) State
+        let nextGlitchTimer = 16; // First glitch at 16s
+        let isGlitching = false;
+        let glitchTimeLeft = 0;
+        let glitchMode = 0; // 0: Tilt + RGB Split, 1: Neon Invert + Jitter, 2: Wave Distortion
+        let currentTiltAngle = 0;
+
+        // Screen Shake
+        let shakeIntensity = 0;
+
+        // Run Statistics
+        let nearMissCount = 0;
+        let smashedObstaclesCount = 0;
+
+        // Entities
+        const player = {
+            x: 0,
+            y: 0,
+            targetX: 0,
+            targetY: 0,
+            radius: 17,
+            vx: 0,
+            tilt: 0,
+            trail: []
+        };
+
+        let obstacles = [];
+        let orbs = [];
+        let particles = [];
+        let floatingTexts = [];
+        let speedLines = [];
+
+        // Spawning Timers
+        let obstacleSpawnTimer = 0;
+        let orbSpawnTimer = 0;
+
+        // Input State
+        const keys = { left: false, right: false, up: false, down: false };
+        let pointerActive = false;
+
+        /* ============================================================================
+         * 3. RESPONSIVE CANVAS & INPUT CONTROLS
+         * ============================================================================ */
+        function resizeCanvas() {
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+            if (gameState === 'START') {
+                player.x = canvas.width / 2;
+                player.y = canvas.height * 0.82;
+                player.targetX = player.x;
+                player.targetY = player.y;
+            }
+        }
+        window.addEventListener('resize', resizeCanvas);
+        resizeCanvas();
+
+        // Keyboard Listeners
+        window.addEventListener('keydown', (e) => {
+            if (e.code === 'ArrowLeft' || e.code === 'KeyA') keys.left = true;
+            if (e.code === 'ArrowRight' || e.code === 'KeyD') keys.right = true;
+            if (e.code === 'ArrowUp' || e.code === 'KeyW') keys.up = true;
+            if (e.code === 'ArrowDown' || e.code === 'KeyS') keys.down = true;
+
+            if ((e.code === 'Space' || e.code === 'Enter') && gameState !== 'PLAYING') {
+                e.preventDefault();
+                startGame();
+            }
+        });
+
+        window.addEventListener('keyup', (e) => {
+            if (e.code === 'ArrowLeft' || e.code === 'KeyA') keys.left = false;
+            if (e.code === 'ArrowRight' || e.code === 'KeyD') keys.right = false;
+            if (e.code === 'ArrowUp' || e.code === 'KeyW') keys.up = false;
+            if (e.code === 'ArrowDown' || e.code === 'KeyS') keys.down = false;
+        });
+
+        // Mouse & Touch Free Movement
+        function updatePointerTarget(clientX, clientY) {
+            if (gameState !== 'PLAYING') return;
+            pointerActive = true;
+            const margin = 26;
+            player.targetX = Math.max(margin, Math.min(canvas.width - margin, clientX));
+            // Allow vertical freedom in the bottom 38% of the screen
+            const minY = canvas.height * 0.62;
+            const maxY = canvas.height - 38;
+            player.targetY = Math.max(minY, Math.min(maxY, clientY));
+        }
+
+        canvas.addEventListener('mousemove', (e) => {
+            updatePointerTarget(e.clientX, e.clientY);
+        });
+
+        canvas.addEventListener('touchstart', (e) => {
+            if (e.touches.length > 0) {
+                // Offset finger slightly below craft so player can see clearly on mobile
+                updatePointerTarget(e.touches[0].clientX, e.touches[0].clientY - 45);
+            }
+        }, { passive: true });
+
+        canvas.addEventListener('touchmove', (e) => {
+            if (e.touches.length > 0) {
+                updatePointerTarget(e.touches[0].clientX, e.touches[0].clientY - 45);
+            }
+        }, { passive: true });
+
+        // UI Button Listeners
+        startBtn.addEventListener('click', startGame);
+        retryBtn.addEventListener('click', startGame);
+
+        muteBtn.addEventListener('click', () => {
+            const muted = audio.toggleMute();
+            iconSoundOn.classList.toggle('hidden', muted);
+            iconSoundOff.classList.toggle('hidden', !muted);
+        });
+
+        /* ============================================================================
+         * 4. GAME INITIALIZATION & STATE CONTROL
+         * ============================================================================ */
+        function initSpeedLines() {
+            speedLines = [];
+            for (let i = 0; i < 35; i++) {
+                speedLines.push({
+                    x: Math.random() * canvas.width,
+                    y: Math.random() * canvas.height,
+                    length: 25 + Math.random() * 65,
+                    speed: 500 + Math.random() * 700,
+                    alpha: 0.1 + Math.random() * 0.35
+                });
+            }
+        }
+
+        function startGame() {
+            audio.init();
+            gameState = 'PLAYING';
+            startModal.classList.add('hidden');
+            gameOverModal.classList.add('hidden');
+
+            // Reset stats & timers
+            score = 0;
+            elapsedTime = 0;
+            speedMultiplier = 1.0;
+            nearMissCount = 0;
+            smashedObstaclesCount = 0;
+
+            feverOrbs = 0;
+            isFever = false;
+            feverTimeLeft = 0;
+
+            isGlitching = false;
+            glitchTimeLeft = 0;
+            nextGlitchTimer = 14; // First visual interference after 14s
+            currentTiltAngle = 0;
+            shakeIntensity = 0;
+
+            // Reset Player
+            player.x = canvas.width / 2;
+            player.y = canvas.height * 0.82;
+            player.targetX = player.x;
+            player.targetY = player.y;
+            player.trail = [];
+            pointerActive = false;
+
+            // Clear arrays
+            obstacles = [];
+            orbs = [];
+            particles = [];
+            floatingTexts = [];
+            initSpeedLines();
+
+            obstacleSpawnTimer = 0.4;
+            orbSpawnTimer = 1.2;
+
+            updateFeverHUD();
+            glitchAlert.classList.add('hidden');
+            feverAlert.classList.add('hidden');
+
+            audio.startMusic(() => isFever);
+            lastTime = performance.now();
+        }
+
+        function triggerGameOver() {
+            gameState = 'GAMEOVER';
+            audio.stopMusic();
+            audio.playGameOver();
+            shakeIntensity = 22;
+
+            // Massive explosion at player position
+            spawnExplosion(player.x, player.y, '#ff007f', 45);
+            spawnExplosion(player.x, player.y, '#00f3ff', 25);
+
+            const finalScoreInt = Math.floor(score);
+            const isNewRecord = finalScoreInt > highScore;
+            if (isNewRecord) {
+                highScore = finalScoreInt;
+                localStorage.setItem(STORAGE_KEY, highScore.toString());
+                bestScoreDisplay.textContent = highScore.toLocaleString();
+            }
+
+            finalScoreEl.textContent = finalScoreInt.toLocaleString();
+            finalBestScoreEl.textContent = highScore.toLocaleString();
+            newRecordBadge.classList.toggle('hidden', !isNewRecord);
+            statNearMissEl.textContent = nearMissCount;
+            statSmashedEl.textContent = smashedObstaclesCount;
+
+            glitchAlert.classList.add('hidden');
+            feverAlert.classList.add('hidden');
+            gameOverModal.classList.remove('hidden');
+        }
+
+        /* ============================================================================
+         * 5. SPAWNERS & SPECIAL MECHANICS (FEVER & GLITCH)
+         * ============================================================================ */
+        function spawnObstacle() {
+            // Types: 'BLOCK' (Neon Barrier), 'MOVING' (Patrolling Cyber Wall), 'GLITCH_DRONE' (Jittering Cube)
+            const rand = Math.random();
+            let type = 'BLOCK';
+            if (rand > 0.68) type = 'MOVING';
+            else if (rand > 0.45 && elapsedTime > 8) type = 'GLITCH_DRONE';
+
+            const minW = Math.max(65, canvas.width * 0.09);
+            const maxW = Math.min(210, canvas.width * 0.25);
+            const w = type === 'GLITCH_DRONE' ? 54 : minW + Math.random() * (maxW - minW);
+            const h = type === 'GLITCH_DRONE' ? 54 : 26 + Math.random() * 16;
+
+            const x = 20 + Math.random() * (canvas.width - w - 40);
+            const baseSpeed = (290 + Math.random() * 90) * speedMultiplier;
+
+            obstacles.push({
+                x,
+                y: -h - 20,
+                w,
+                h,
+                type,
+                vy: baseSpeed,
+                vx: type === 'MOVING' ? (Math.random() < 0.5 ? -1 : 1) * (130 + Math.random() * 90) : 0,
+                nearMissed: false,
+                color: type === 'GLITCH_DRONE' ? '#fcee0a' : '#ff007f',
+                pulsePhase: Math.random() * Math.PI * 2
+            });
+        }
+
+        function spawnEnergyOrb() {
+            const margin = 50;
+            const x = margin + Math.random() * (canvas.width - margin * 2);
+            orbs.push({
+                x,
+                y: -30,
+                radius: 14,
+                vy: 260 * speedMultiplier,
+                phase: Math.random() * Math.PI * 2
+            });
+        }
+
+        function activateFeverMode() {
+            isFever = true;
+            feverTimeLeft = FEVER_DURATION;
+            audio.playFeverStart();
+            shakeIntensity = 12;
+
+            feverSegmentsContainer.classList.add('hidden');
+            feverTimerBarWrap.classList.remove('hidden');
+            feverAlert.classList.remove('hidden');
+            feverLabel.textContent = 'OVERDRIVE // 極限狂熱衝刺';
+            feverCountText.textContent = 'MAX!';
+
+            addFloatingText(player.x, player.y - 45, '⚡ FEVER OVERDRIVE! ⚡', '#fcee0a', 22);
+            spawnExplosion(player.x, player.y, '#fcee0a', 35);
+        }
+
+        function updateFeverHUD() {
+            if (!isFever) {
+                feverSegmentsContainer.classList.remove('hidden');
+                feverTimerBarWrap.classList.add('hidden');
+                feverAlert.classList.add('hidden');
+                feverLabel.textContent = 'FEVER CORE // 狂熱能量';
+                feverCountText.textContent = `${feverOrbs} / ${FEVER_MAX_ORBS}`;
+
+                const segments = feverSegmentsContainer.children;
+                for (let i = 0; i < segments.length; i++) {
+                    if (i < feverOrbs) {
+                        segments[i].className = 'fever-segment flex-1 bg-yellow-300 border border-white shadow-[0_0_12px_#fcee0a]';
+                    } else {
+                        segments[i].className = 'fever-segment flex-1 bg-slate-800/90 border border-cyan-500/30';
+                    }
+                }
+            }
+        }
+
+        function triggerVisualGlitch() {
+            isGlitching = true;
+            glitchTimeLeft = 4.2; // Lasts 4.2 seconds
+            glitchMode = Math.floor(Math.random() * 3);
+            audio.playGlitchAlert();
+            shakeIntensity = 9;
+            glitchAlert.classList.remove('hidden');
+            addFloatingText(canvas.width / 2, canvas.height * 0.35, '⚠ 系統訊號干擾 SYSTEM GLITCH ⚠', '#ff007f', 20);
+        }
+
+        function spawnExplosion(x, y, color, count = 20) {
+            for (let i = 0; i < count; i++) {
+                const angle = Math.random() * Math.PI * 2;
+                const speed = 60 + Math.random() * 340;
+                particles.push({
+                    x,
+                    y,
+                    vx: Math.cos(angle) * speed,
+                    vy: Math.sin(angle) * speed,
+                    size: 2.5 + Math.random() * 4.5,
+                    color,
+                    alpha: 1,
+                    life: 0.35 + Math.random() * 0.4
+                });
+            }
+        }
+
+        function addFloatingText(x, y, text, color = '#00f3ff', size = 16) {
+            floatingTexts.push({
+                x,
+                y,
+                text,
+                color,
+                size,
+                alpha: 1,
+                vy: -75
+            });
+        }
+
+        /* ============================================================================
+         * 6. MAIN UPDATE LOOP
+         * ============================================================================ */
+        function update(dt) {
+            // Subtle rhythmic visual pulse
+            beatPulse = (beatPulse + dt * (isFever ? 8 : 4.5)) % (Math.PI * 2);
+
+            // Decay screen shake
+            if (shakeIntensity > 0) {
+                shakeIntensity = Math.max(0, shakeIntensity - dt * 35);
+            }
+
+            // Update Particles
+            for (let i = particles.length - 1; i >= 0; i--) {
+                const p = particles[i];
+                p.x += p.vx * dt;
+                p.y += p.vy * dt;
+                p.life -= dt;
+                p.alpha = Math.max(0, p.life * 2);
+                if (p.life <= 0) particles.splice(i, 1);
+            }
+
+            // Update Floating Texts
+            for (let i = floatingTexts.length - 1; i >= 0; i--) {
+                const ft = floatingTexts[i];
+                ft.y += ft.vy * dt;
+                ft.alpha -= dt * 1.1;
+                if (ft.alpha <= 0) floatingTexts.splice(i, 1);
+            }
+
+            if (gameState !== 'PLAYING') return;
+
+            elapsedTime += dt;
+
+            // Dynamic Speed Scaling + Fever Boost
+            const baseProgression = 1.0 + Math.min(1.6, elapsedTime * 0.022);
+            speedMultiplier = isFever ? baseProgression * 1.85 : baseProgression;
+
+            // Passive score increase
+            score += dt * 28 * speedMultiplier;
+            scoreDisplay.textContent = Math.floor(score).toLocaleString();
+            speedDisplay.textContent = `${speedMultiplier.toFixed(1)}x`;
+
+            // Scroll 3D Grid & Speed Lines
+            gridScrollOffset = (gridScrollOffset + dt * 320 * speedMultiplier) % 60;
+            speedLines.forEach(line => {
+                line.y += line.speed * speedMultiplier * dt;
+                if (line.y > canvas.height) {
+                    line.y = -line.length;
+                    line.x = Math.random() * canvas.width;
+                }
+            });
+
+            // Handle Keyboard Movement (Overrides pointer target smoothly)
+            const keyboardSpeed = 580;
+            if (keys.left || keys.right || keys.up || keys.down) {
+                pointerActive = false;
+                if (keys.left) player.targetX -= keyboardSpeed * dt;
+                if (keys.right) player.targetX += keyboardSpeed * dt;
+                if (keys.up) player.targetY -= keyboardSpeed * 0.8 * dt;
+                if (keys.down) player.targetY += keyboardSpeed * 0.8 * dt;
+
+                const margin = 26;
+                player.targetX = Math.max(margin, Math.min(canvas.width - margin, player.targetX));
+                player.targetY = Math.max(canvas.height * 0.62, Math.min(canvas.height - 38, player.targetY));
+            }
+
+            // Smooth interpolation for responsive cyber-craft feel
+            const prevX = player.x;
+            const lerpFactor = Math.min(1, dt * 16);
+            player.x += (player.targetX - player.x) * lerpFactor;
+            player.y += (player.targetY - player.y) * lerpFactor;
+            player.vx = (player.x - prevX) / Math.max(0.001, dt);
+            player.tilt = Math.max(-0.45, Math.min(0.45, player.vx * 0.00065));
+
+            // Record Player Neon Motion Trail
+            player.trail.unshift({ x: player.x, y: player.y, tilt: player.tilt });
+            if (player.trail.length > 14) player.trail.pop();
+
+            // Manage Fever Overdrive Timer
+            if (isFever) {
+                feverTimeLeft -= dt;
+                const pct = Math.max(0, (feverTimeLeft / FEVER_DURATION) * 100);
+                feverTimerBar.style.width = `${pct}%`;
+
+                if (feverTimeLeft <= 0) {
+                    isFever = false;
+                    feverOrbs = 0;
+                    updateFeverHUD();
+                    // Clear remaining close obstacles on Fever exit so player doesn't get cheap-hit
+                    obstacles.forEach(ob => {
+                        if (ob.y > canvas.height * 0.35) {
+                            spawnExplosion(ob.x + ob.w / 2, ob.y + ob.h / 2, '#00f3ff', 10);
+                            ob.y = canvas.height + 200;
+                        }
+                    });
+                }
+            }
+
+            // Manage System Glitch Interference
+            nextGlitchTimer -= dt;
+            if (nextGlitchTimer <= 0 && !isGlitching) {
+                triggerVisualGlitch();
+                nextGlitchTimer = 18 + Math.random() * 8; // Trigger every 18-26s
+            }
+
+            if (isGlitching) {
+                glitchTimeLeft -= dt;
+                const targetTilt = (glitchMode === 0 ? 0.055 : -0.045) * Math.sin(elapsedTime * 4);
+                currentTiltAngle += (targetTilt - currentTiltAngle) * dt * 6;
+
+                if (glitchTimeLeft <= 0) {
+                    isGlitching = false;
+                    glitchAlert.classList.add('hidden');
+                    score += 100;
+                    addFloatingText(player.x, player.y - 35, 'GLITCH SURVIVED +100', '#00f3ff', 17);
+                }
+            } else {
+                currentTiltAngle += (0 - currentTiltAngle) * dt * 8;
+            }
+
+            // Spawn Obstacles
+            obstacleSpawnTimer -= dt;
+            if (obstacleSpawnTimer <= 0) {
+                spawnObstacle();
+                const baseInterval = Math.max(0.24, 0.72 - elapsedTime * 0.006);
+                obstacleSpawnTimer = isFever ? baseInterval * 0.55 : baseInterval;
+            }
+
+            // Spawn Energy Orbs
+            orbSpawnTimer -= dt;
+            if (orbSpawnTimer <= 0) {
+                if (!isFever) spawnEnergyOrb();
+                orbSpawnTimer = 1.65 + Math.random() * 1.1;
+            }
+
+            // Update & Check Energy Orbs
+            for (let i = orbs.length - 1; i >= 0; i--) {
+                const orb = orbs[i];
+                orb.y += orb.vy * (isFever ? 1.5 : 1) * dt;
+                orb.phase += dt * 6;
+
+                // Circle-to-Circle Collision with Player
+                const dx = player.x - orb.x;
+                const dy = player.y - orb.y;
+                const dist = Math.hypot(dx, dy);
+
+                if (dist < player.radius + orb.radius + 8) {
+                    // Collected Energy Orb!
+                    feverOrbs = Math.min(FEVER_MAX_ORBS, feverOrbs + 1);
+                    score += 35;
+                    audio.playOrbPickup(feverOrbs);
+                    spawnExplosion(orb.x, orb.y, '#fcee0a', 16);
+                    addFloatingText(orb.x, orb.y, `CORE ${feverOrbs}/${FEVER_MAX_ORBS} (+35)`, '#fcee0a', 15);
+                    updateFeverHUD();
+
+                    if (feverOrbs >= FEVER_MAX_ORBS && !isFever) {
+                        activateFeverMode();
+                    }
+                    orbs.splice(i, 1);
+                    continue;
+                }
+
+                // Missed Orb falls off bottom
+                if (orb.y - orb.radius > canvas.height + 20) {
+                    if (!isFever && feverOrbs > 0) {
+                        feverOrbs = Math.max(0, feverOrbs - 1);
+                        updateFeverHUD();
+                        addFloatingText( Math.min(canvas.width - 70, Math.max(70, orb.x)), canvas.height - 30, 'COMBO -1', '#ff007f', 13);
+                    }
+                    orbs.splice(i, 1);
+                }
+            }
+
+            // Update & Check Obstacles
+            for (let i = obstacles.length - 1; i >= 0; i--) {
+                const ob = obstacles[i];
+                ob.y += ob.vy * (isFever ? 1.55 : 1) * dt;
+                ob.pulsePhase += dt * 8;
+
+                if (ob.type === 'MOVING') {
+                    ob.x += ob.vx * dt;
+                    if (ob.x <= 15 || ob.x + ob.w >= canvas.width - 15) {
+                        ob.vx *= -1;
+                    }
+                } else if (ob.type === 'GLITCH_DRONE') {
+                    // Rapid horizontal micro-teleport jitter
+                    if (Math.random() < 0.15) {
+                        ob.x = Math.max(20, Math.min(canvas.width - ob.w - 20, ob.x + (Math.random() - 0.5) * 28));
+                    }
+                }
+
+                // Closest point on obstacle rectangle to player circle center
+                const closestX = Math.max(ob.x, Math.min(player.x, ob.x + ob.w));
+                const closestY = Math.max(ob.y, Math.min(player.y, ob.y + ob.h));
+                const dist = Math.hypot(player.x - closestX, player.y - closestY);
+
+                // Direct Collision Check (shrunk slightly for fair hitbox feel)
+                const hitRadius = player.radius * 0.78;
+                if (dist < hitRadius) {
+                    if (isFever) {
+                        // FEVER MODE: Smash obstacle into pieces for +50 bonus!
+                        score += 50;
+                        smashedObstaclesCount++;
+                        shakeIntensity = 11;
+                        audio.playSmashObstacle();
+                        spawnExplosion(ob.x + ob.w / 2, ob.y + ob.h / 2, '#fcee0a', 26);
+                        spawnExplosion(ob.x + ob.w / 2, ob.y + ob.h / 2, '#ff007f', 15);
+                        addFloatingText(ob.x + ob.w / 2, ob.y, 'SMASH! +50', '#fcee0a', 20);
+                        obstacles.splice(i, 1);
+                        continue;
+                    } else {
+                        // Normal Mode: Game Over
+                        triggerGameOver();
+                        return;
+                    }
+                }
+
+                // Near-Miss Detection (擦邊獎勵)
+                const nearMissThreshold = player.radius + 26;
+                if (!isFever && !ob.nearMissed && dist >= hitRadius && dist < nearMissThreshold && player.y >= ob.y - 10) {
+                    ob.nearMissed = true;
+                    nearMissCount++;
+                    score += 25;
+                    audio.playNearMiss();
+                    spawnExplosion(player.x, player.y - 10, '#00f3ff', 10);
+                    addFloatingText(player.x, player.y - 28, '極限擦邊! +25', '#00f3ff', 16);
+                }
+
+                // Remove off-screen obstacles
+                if (ob.y > canvas.height + 80) {
+                    obstacles.splice(i, 1);
+                }
+            }
+        }
+
+        /* ============================================================================
+         * 7. CYBERPUNK RENDERER (3D GRID, TRAILS, NEON GLOW & GLITCH FX)
+         * ============================================================================ */
+        function render() {
+            ctx.save();
+
+            // Base Background Fill
+            if (isGlitching && glitchMode === 1 && Math.sin(elapsedTime * 35) > 0.4) {
+                // High-contrast cyberpunk flash during Glitch Mode 1
+                ctx.fillStyle = '#180526';
+            } else {
+                ctx.fillStyle = '#06060c';
+            }
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            // Apply Screen Shake & Glitch Tilt
+            const shakeX = (Math.random() - 0.5) * shakeIntensity;
+            const shakeY = (Math.random() - 0.5) * shakeIntensity;
+            ctx.translate(canvas.width / 2 + shakeX, canvas.height / 2 + shakeY);
+            ctx.rotate(currentTiltAngle);
+            ctx.translate(-canvas.width / 2, -canvas.height / 2);
+
+            // 1. Draw Synthwave 3D Perspective Grid & Horizon Glow
+            drawCyberGrid();
+
+            // 2. Draw Vertical Speed Lines
+            ctx.save();
+            speedLines.forEach(line => {
+                ctx.strokeStyle = isFever
+                    ? `rgba(252, 238, 10, ${line.alpha * 1.4})`
+                    : `rgba(0, 243, 255, ${line.alpha})`;
+                ctx.lineWidth = isFever ? 2.5 : 1.5;
+                ctx.beginPath();
+                ctx.moveTo(line.x, line.y);
+                ctx.lineTo(line.x, line.y + line.length);
+                ctx.stroke();
+            });
+            ctx.restore();
+
+            // 3. Draw Energy Orbs (能量核心)
+            orbs.forEach(orb => {
+                const pulse = 1 + Math.sin(orb.phase) * 0.18;
+                ctx.save();
+                ctx.translate(orb.x, orb.y);
+                ctx.shadowBlur = 18;
+                ctx.shadowColor = '#fcee0a';
+
+                // Outer rotating diamond ring
+                ctx.rotate(orb.phase * 0.6);
+                ctx.strokeStyle = '#00f3ff';
+                ctx.lineWidth = 2;
+                const r = orb.radius * pulse;
+                ctx.strokeRect(-r * 0.85, -r * 0.85, r * 1.7, r * 1.7);
+
+                // Inner glowing core
+                ctx.fillStyle = '#fcee0a';
+                ctx.beginPath();
+                ctx.arc(0, 0, orb.radius * 0.65, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.restore();
+            });
+
+            // 4. Draw Obstacles (with RGB Chromatic Aberration during Glitch!)
+            obstacles.forEach(ob => {
+                ctx.save();
+
+                // RGB Split Ghosting during System Glitch
+                if (isGlitching) {
+                    const offset = 6 + Math.sin(elapsedTime * 30) * 4;
+                    ctx.fillStyle = 'rgba(0, 243, 255, 0.45)';
+                    ctx.fillRect(ob.x - offset, ob.y, ob.w, ob.h);
+                    ctx.fillStyle = 'rgba(255, 0, 127, 0.45)';
+                    ctx.fillRect(ob.x + offset, ob.y, ob.w, ob.h);
+                }
+
+                const mainColor = isFever ? '#00f3ff' : ob.color;
+                ctx.shadowBlur = 16;
+                ctx.shadowColor = mainColor;
+
+                // Outer Neon Frame
+                ctx.fillStyle = 'rgba(15, 8, 26, 0.9)';
+                ctx.strokeStyle = mainColor;
+                ctx.lineWidth = 2.5;
+                ctx.beginPath();
+                ctx.roundRect(ob.x, ob.y, ob.w, ob.h, 4);
+                ctx.fill();
+                ctx.stroke();
+
+                // Inner Hazard Stripes / Core Detail
+                ctx.fillStyle = mainColor;
+                ctx.globalAlpha = 0.65 + Math.sin(ob.pulsePhase) * 0.25;
+                ctx.fillRect(ob.x + 6, ob.y + 6, ob.w - 12, ob.h - 12);
+                ctx.restore();
+            });
+
+            // 5. Draw Player Trail & Cyber-Craft
+            if (gameState !== 'GAMEOVER') {
+                drawPlayerCraft();
+            }
+
+            // 6. Draw Particles
+            particles.forEach(p => {
+                ctx.save();
+                ctx.globalAlpha = p.alpha;
+                ctx.fillStyle = p.color;
+                ctx.shadowBlur = 10;
+                ctx.shadowColor = p.color;
+                ctx.fillRect(p.x - p.size / 2, p.y - p.size / 2, p.size, p.size);
+                ctx.restore();
+            });
+
+            // 7. Draw Floating Combat Texts
+            floatingTexts.forEach(ft => {
+                ctx.save();
+                ctx.globalAlpha = Math.max(0, ft.alpha);
+                ctx.font = `900 ${ft.size}px 'Orbitron', 'Noto Sans TC', sans-serif`;
+                ctx.textAlign = 'center';
+                ctx.fillStyle = ft.color;
+                ctx.shadowBlur = 12;
+                ctx.shadowColor = ft.color;
+                ctx.fillText(ft.text, ft.x, ft.y);
+                ctx.restore();
+            });
+
+            // 8. Glitch Horizontal Slice Artifacts
+            if (isGlitching) {
+                drawGlitchSlices();
+            }
+
+            ctx.restore();
+        }
+
+        function drawCyberGrid() {
+            const horizonY = canvas.height * 0.28;
+
+            // Horizon atmospheric neon glow
+            const grad = ctx.createLinearGradient(0, horizonY - 60, 0, canvas.height);
+            const glowColor = isFever
+                ? 'rgba(252, 238, 10, 0.16)'
+                : isGlitching
+                    ? 'rgba(255, 0, 127, 0.20)'
+                    : 'rgba(0, 243, 255, 0.12)';
+            grad.addColorStop(0, 'rgba(6, 6, 12, 0)');
+            grad.addColorStop(0.2, glowColor);
+            grad.addColorStop(1, 'rgba(6, 6, 12, 0.95)');
+
+            ctx.fillStyle = grad;
+            ctx.fillRect(0, horizonY - 60, canvas.width, canvas.height - horizonY + 60);
+
+            ctx.save();
+            ctx.strokeStyle = isFever
+                ? 'rgba(252, 238, 10, 0.28)'
+                : isGlitching
+                    ? 'rgba(255, 0, 127, 0.32)'
+                    : 'rgba(0, 243, 255, 0.20)';
+            ctx.lineWidth = 1 + Math.sin(beatPulse) * 0.4;
+
+            // Perspective radial lines from vanishing point
+            const centerX = canvas.width / 2;
+            const numCols = 14;
+            for (let i = -numCols; i <= numCols; i++) {
+                ctx.beginPath();
+                ctx.moveTo(centerX + i * 25, horizonY);
+                ctx.lineTo(centerX + i * 160, canvas.height);
+                ctx.stroke();
+            }
+
+            // Scrolling horizontal grid bars
+            const numRows = 12;
+            for (let i = 0; i < numRows; i++) {
+                const progress = ((i + (gridScrollOffset / 60)) / numRows);
+                const curvedY = horizonY + Math.pow(progress, 2.1) * (canvas.height - horizonY);
+                ctx.beginPath();
+                ctx.moveTo(0, curvedY);
+                ctx.lineTo(canvas.width, curvedY);
+                ctx.stroke();
+            }
+            ctx.restore();
+        }
+
+        function drawPlayerCraft() {
+            const rainbowHue = (elapsedTime * 360) % 360;
+            const primaryColor = isFever ? `hsl(${rainbowHue}, 100%, 60%)` : '#00f3ff';
+
+            // 1. Draw Motion Trail (殘影)
+            for (let i = player.trail.length - 1; i >= 1; i--) {
+                const pt = player.trail[i];
+                const ratio = 1 - i / player.trail.length;
+                ctx.save();
+                ctx.translate(pt.x, pt.y + i * 3.5);
+                ctx.rotate(pt.tilt);
+                ctx.globalAlpha = ratio * 0.42;
+                ctx.fillStyle = isFever ? '#fcee0a' : '#00f3ff';
+                const scale = ratio * 0.9;
+                ctx.beginPath();
+                ctx.moveTo(0, -18 * scale);
+                ctx.lineTo(-16 * scale, 14 * scale);
+                ctx.lineTo(16 * scale, 14 * scale);
+                ctx.closePath();
+                ctx.fill();
+                ctx.restore();
+            }
+
+            // 2. Draw Sleek Neon Cyber-Craft
+            ctx.save();
+            ctx.translate(player.x, player.y);
+            ctx.rotate(player.tilt);
+
+            // Fever Mode Invincibility Shield Ring
+            if (isFever) {
+                ctx.save();
+                ctx.strokeStyle = '#fcee0a';
+                ctx.lineWidth = 2.5;
+                ctx.shadowBlur = 20;
+                ctx.shadowColor = '#fcee0a';
+                ctx.beginPath();
+                ctx.arc(0, 0, player.radius + 10 + Math.sin(elapsedTime * 20) * 3, 0, Math.PI * 2);
+                ctx.stroke();
+                ctx.restore();
+            }
+
+            // Chromatic split on player during glitch
+            if (isGlitching) {
+                ctx.fillStyle = 'rgba(255, 0, 127, 0.6)';
+                ctx.beginPath();
+                ctx.moveTo(-5, -22);
+                ctx.lineTo(-23, 16);
+                ctx.lineTo(13, 16);
+                ctx.closePath();
+                ctx.fill();
+            }
+
+            ctx.shadowBlur = isFever ? 28 : 18;
+            ctx.shadowColor = primaryColor;
+
+            // Main Wing Silhouette
+            ctx.fillStyle = '#090d16';
+            ctx.strokeStyle = primaryColor;
+            ctx.lineWidth = 2.8;
+            ctx.beginPath();
+            ctx.moveTo(0, -22);      // Nose tip
+            ctx.lineTo(19, 16);      // Right wingtip
+            ctx.lineTo(6, 10);       // Right inner notch
+            ctx.lineTo(0, 15);       // Thruster center
+            ctx.lineTo(-6, 10);      // Left inner notch
+            ctx.lineTo(-19, 16);     // Left wingtip
+            ctx.closePath();
+            ctx.fill();
+            ctx.stroke();
+
+            // Glowing Cockpit Core
+            ctx.fillStyle = isFever ? '#ffffff' : '#ff007f';
+            ctx.beginPath();
+            ctx.moveTo(0, -10);
+            ctx.lineTo(6, 7);
+            ctx.lineTo(-6, 7);
+            ctx.closePath();
+            ctx.fill();
+
+            // Thruster Flame
+            const flameLen = 18 + Math.random() * 14 + (isFever ? 14 : 0);
+            ctx.fillStyle = isFever ? '#fcee0a' : '#00f3ff';
+            ctx.beginPath();
+            ctx.moveTo(-5, 13);
+            ctx.lineTo(0, 13 + flameLen);
+            ctx.lineTo(5, 13);
+            ctx.closePath();
+            ctx.fill();
+
+            ctx.restore();
+        }
+
+        function drawGlitchSlices() {
+            ctx.save();
+            for (let i = 0; i < 4; i++) {
+                if (Math.random() < 0.45) {
+                    const sliceY = Math.random() * canvas.height;
+                    const sliceH = 4 + Math.random() * 18;
+                    const shiftX = (Math.random() - 0.5) * 35;
+                    ctx.fillStyle = i % 2 === 0 ? 'rgba(0, 243, 255, 0.18)' : 'rgba(255, 0, 127, 0.18)';
+                    ctx.fillRect(shiftX, sliceY, canvas.width, sliceH);
+                }
+            }
+            ctx.restore();
+        }
+
+        /* ============================================================================
+         * 8. MAIN ANIMATION LOOP
+         * ============================================================================ */
+        function gameLoop(timestamp) {
+            if (!lastTime) lastTime = timestamp;
+            const dt = Math.min(0.05, (timestamp - lastTime) / 1000);
+            lastTime = timestamp;
+
+            update(dt);
+            render();
+
+            requestAnimationFrame(gameLoop);
+        }
+
+        window.onload = function () {
+            initSpeedLines();
+            requestAnimationFrame(gameLoop);
+        };
+    </script>
+</body>
+</html>
